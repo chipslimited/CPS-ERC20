@@ -1,5 +1,6 @@
 pragma solidity ^0.4.18;
 
+
 library SafeMath {
     function mul(uint256 a, uint256 b) internal pure returns (uint256) {
         if (a == 0) {
@@ -29,6 +30,7 @@ library SafeMath {
     }
 }
 
+
 interface ERC20 {
     function balanceOf(address who) public view returns (uint256);
     function transfer(address to, uint256 value) payable public returns (bool);
@@ -50,14 +52,14 @@ interface ERCFundLock{
 }
 
 //lock amount of fund
-//each time unlockFundGradient is called
+//each time unlockFundEx is called
 //unlock unlockAmount = (now - time locked)/(deadline - time locked)*amount
 //
-interface ERCFundLockUnlockGradient {
-    function lockFundUnlockGradient (uint cycle, uint numOfSeconds, uint256 amount) public;
-    function unlockFundGradient (uint cycle) public;
+interface ERCFundLockUnlockEx {
+    function lockFundUnlockEx (uint cycle, uint numOfSeconds, uint256 amount) public;
+    function unlockFundEx (uint cycle) public;
 
-    event UnlockFundGradient(address indexed from, uint cycle, uint unlockTimestamp, uint deadline, uint256 unlockAmount);
+    event UnlockFundEx(address indexed from, uint cycle, uint unlockTimestamp, uint deadline, uint256 unlockAmount);
 }
 
 interface ERC223 {
@@ -70,27 +72,31 @@ contract ERC223ReceivingContract {
     function tokenFallback(address _from, uint _value, bytes _data) public;
 }
 
-contract CPSTestToken1 is ERC20,ERC223,ERCFundLock {
+contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
 
     using SafeMath for uint;
+
+    uint8 constant TOTAL_CYCLES = 5;
 
     string internal _name;
     string internal _symbol;
     uint8 internal _decimals;
     uint256 internal _totalSupply;
     uint256 public unitsOneEthCanBuy;     // How many units of your coin can be bought by 1 ETH?
-    uint256 public totalEthInWei;         // WEI is the smallest unit of ETH (the equivalent of cent in USD or satoshi in BTC). We'll store the total ETH raised via our ICO here.  
+    uint256 public totalEthInWei;         // WEI is the smallest unit of ETH (the equivalent of cent in USD or satoshi in BTC). We'll store the total ETH raised via our ICO here.
     address public fundsWallet;           // Where should the raised ETH go?
 
     mapping (address => uint256) internal balances;
     mapping (address => mapping (address => uint256)) internal allowed;
     mapping (uint => mapping (string => uint256)) internal fundLocks;
 
+
+
     function lockFund (uint cycle, uint numOfSeconds, uint256 amount) public  {
 
-        require (cycle > 0 && cycle <= 5 && amount > 0 && numOfSeconds > 0 && (fundLocks[cycle]["deadline"] == 0||fundLocks[cycle]["deadline"] < now));
-        require (balances[fundsWallet] - totalLockAmount() > amount);
-        require (msg.sender == fundsWallet);
+        require(cycle > 0 && cycle <= TOTAL_CYCLES && amount > 0 && numOfSeconds > 0 && (fundLocks[cycle]["deadline"] == 0||fundLocks[cycle]["deadline"] < now));
+        require(balances[fundsWallet] - totalLockAmount() > amount);
+        require(msg.sender == fundsWallet);
 
         fundLocks[cycle]["deadline"] = now + numOfSeconds;
         fundLocks[cycle]["amount"] = amount;
@@ -107,7 +113,7 @@ contract CPSTestToken1 is ERC20,ERC223,ERCFundLock {
     }
 
     function unlockFund (uint cycle) public{
-        require (cycle > 0 && cycle <= 5 &&
+        require (cycle > 0 && cycle <= TOTAL_CYCLES &&
         (fundLocks[cycle]["deadline"] < now) &&
         fundLocks[cycle]["amount"] > 0
         );
@@ -123,12 +129,48 @@ contract CPSTestToken1 is ERC20,ERC223,ERCFundLock {
 
     function totalLockAmount() public view returns (uint256) {
         uint256 amount = 0;
-        for(uint i=1;i<=5;i++){
+        uint i = 0;
+
+        for(i=1;i<=TOTAL_CYCLES;i++){
             if(fundLocks[i]["deadline"] > now){
                 amount += fundLocks[i]["amount"];
             }
         }
+        for(i=1;i<=TOTAL_CYCLES;i++){
+            if(fundLocks[i+5]["deadline"] > now){
+                amount += fundLocks[i+5]["amount"]-fundLocks[i+5]["unlockAmount"];
+            }
+        }
         return amount;
+    }
+
+    function lockFundUnlockEx (uint cycle, uint numOfSeconds, uint256 amount) public{
+        require (cycle > 0 && cycle <= TOTAL_CYCLES && amount > 0 && numOfSeconds > 0 && (fundLocks[cycle]["deadline"] == 0||fundLocks[cycle]["deadline"] < now));
+        require (balances[fundsWallet] - totalLockAmount() > amount);
+        require (msg.sender == fundsWallet);
+
+        fundLocks[cycle+5]["lockTime"] = now;
+        fundLocks[cycle+5]["deadline"] = now + numOfSeconds;
+        fundLocks[cycle+5]["amount"] = amount;
+        fundLocks[cycle+5]["unlockAmount"] = 0;
+
+        LockFund(msg.sender, fundLocks[cycle]["deadline"], amount);
+    }
+
+
+    function unlockFundEx (uint cycle) public{
+
+        require (cycle > 0 && cycle <= TOTAL_CYCLES &&
+        (fundLocks[cycle+5]["deadline"] < now) &&
+        fundLocks[cycle+5]["amount"] - fundLocks[cycle+5]["unlockAmount"] > 0
+        );
+        require (msg.sender == fundsWallet);
+
+        uint256 now_ts = now;
+        uint256 unlockAmount = 0;
+        //TODO: calculate unlockAmount and update fundLocks[cycle+5]["unlockAmount"]
+
+        UnlockFundEx(msg.sender, cycle, now_ts, fundLocks[cycle+5]["deadline"], unlockAmount);
     }
 
     function CPSTestToken1(string name, string symbol, uint8 decimals, uint256 totalSupply) public {
@@ -171,6 +213,9 @@ contract CPSTestToken1 is ERC20,ERC223,ERCFundLock {
 
 
     function() payable public {
+
+        require(msg.sender == address(0));//disable ICO crowd sale 禁止ICO资金募集，因为本合约已经过了募集阶段
+
         totalEthInWei = totalEthInWei + msg.value;
         uint256 amount = msg.value/10^decimals() * unitsOneEthCanBuy;
         require (balances[fundsWallet] - totalLockAmount() >= amount);
