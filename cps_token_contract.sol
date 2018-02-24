@@ -47,6 +47,7 @@ interface ERC20 {
 interface ERCFundLock{
     function lockFund (uint cycle, uint numOfSeconds, uint256 amount) public;
     function unlockFund (uint cycle) public;
+
     event LockFund(address indexed from, uint deadline, uint256 amount);
     event UnlockFund(address indexed from, uint deadline, uint256 amount);
 }
@@ -56,9 +57,10 @@ interface ERCFundLock{
 //unlock unlockAmount = (now - time locked)/(deadline - time locked)*amount
 //
 interface ERCFundLockUnlockEx {
-    function lockFundUnlockEx (uint cycle, uint numOfSeconds, uint256 amount) public;
+    function lockFundEx (uint cycle, uint numOfSeconds, uint256 amount) public;
     function unlockFundEx (uint cycle) public;
 
+    event LockFundEx(address indexed from, uint deadline, uint256 amount);
     event UnlockFundEx(address indexed from, uint cycle, uint unlockTimestamp, uint deadline, uint256 unlockAmount);
 }
 
@@ -85,6 +87,7 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
     uint256 public unitsOneEthCanBuy;     // How many units of your coin can be bought by 1 ETH?
     uint256 public totalEthInWei;         // WEI is the smallest unit of ETH (the equivalent of cent in USD or satoshi in BTC). We'll store the total ETH raised via our ICO here.
     address public fundsWallet;           // Where should the raised ETH go?
+    address public fundsAdmin;            // Who can lock and unlock fund?
 
     mapping (address => uint256) internal balances;
     mapping (address => mapping (address => uint256)) internal allowed;
@@ -96,7 +99,7 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
 
         require(cycle > 0 && cycle <= TOTAL_CYCLES && amount > 0 && numOfSeconds > 0 && (fundLocks[cycle]["deadline"] == 0||fundLocks[cycle]["deadline"] < now));
         require(balances[fundsWallet] - totalLockAmount() > amount);
-        require(msg.sender == fundsWallet);
+        require (msg.sender == fundsWallet || msg.sender == fundsAdmin);
 
         fundLocks[cycle]["deadline"] = now + numOfSeconds;
         fundLocks[cycle]["amount"] = amount;
@@ -112,12 +115,20 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         return fundLocks[cycle]["amount"];
     }
 
+    function lockedExDeadline(uint cycle) public view returns (uint256) {
+        return fundLocks[cycle+5]["deadline"];
+    }
+
+    function lockedExAmount(uint cycle) public view returns (uint256) {
+        return fundLocks[cycle+5]["amount"]-fundLocks[cycle+5]["unlockedAmount"];
+    }
+
     function unlockFund (uint cycle) public{
         require (cycle > 0 && cycle <= TOTAL_CYCLES &&
         (fundLocks[cycle]["deadline"] < now) &&
         fundLocks[cycle]["amount"] > 0
         );
-        require (msg.sender == fundsWallet);
+        require (msg.sender == fundsWallet || msg.sender == fundsAdmin);
 
         fundLocks[cycle]["deadline"] = 0;
 
@@ -137,40 +148,63 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
             }
         }
         for(i=1;i<=TOTAL_CYCLES;i++){
-            if(fundLocks[i+5]["deadline"] > now){
-                amount += fundLocks[i+5]["amount"]-fundLocks[i+5]["unlockAmount"];
-            }
+            amount += fundLocks[i+5]["amount"]-fundLocks[i+5]["unlockAmount"];
         }
         return amount;
     }
 
-    function lockFundUnlockEx (uint cycle, uint numOfSeconds, uint256 amount) public{
-        require (cycle > 0 && cycle <= TOTAL_CYCLES && amount > 0 && numOfSeconds > 0 && (fundLocks[cycle]["deadline"] == 0||fundLocks[cycle]["deadline"] < now));
+    function lockFundEx (uint cycle, uint numOfSeconds, uint256 amount) public{
+        require (cycle > 0 && cycle <= TOTAL_CYCLES && amount > 0 && numOfSeconds > 0);
         require (balances[fundsWallet] - totalLockAmount() > amount);
-        require (msg.sender == fundsWallet);
+        require (msg.sender == fundsWallet || msg.sender == fundsAdmin);
+
+        if(fundLocks[cycle]["deadline"] <= now && fundLocks[cycle]["deadline"] > 0){
+            if(fundLocks[cycle+5]["amount"] > fundLocks[cycle+5]["unlockAmount"]){
+                unlockFundEx(cycle);
+            }
+        }
 
         fundLocks[cycle+5]["lockTime"] = now;
         fundLocks[cycle+5]["deadline"] = now + numOfSeconds;
         fundLocks[cycle+5]["amount"] = amount;
         fundLocks[cycle+5]["unlockAmount"] = 0;
 
-        LockFund(msg.sender, fundLocks[cycle]["deadline"], amount);
+        LockFundEx(msg.sender, fundLocks[cycle+5]["deadline"], amount);
     }
 
 
     function unlockFundEx (uint cycle) public{
 
-        require (cycle > 0 && cycle <= TOTAL_CYCLES &&
-        (fundLocks[cycle+5]["deadline"] < now) &&
-        fundLocks[cycle+5]["amount"] - fundLocks[cycle+5]["unlockAmount"] > 0
+        require (
+            cycle > 0 && cycle <= TOTAL_CYCLES &&
+            fundLocks[cycle+5]["amount"] > fundLocks[cycle+5]["unlockAmount"]
         );
-        require (msg.sender == fundsWallet);
+        require (msg.sender == fundsWallet || msg.sender == fundsAdmin);
 
         uint256 now_ts = now;
+        uint256 lockedTime = fundLocks[cycle+5]["lockTime"];
         uint256 unlockAmount = 0;
+        uint256 amount = fundLocks[cycle+5]["amount"];
+        uint256 deadline = fundLocks[cycle+5]["deadline"];
         //TODO: calculate unlockAmount and update fundLocks[cycle+5]["unlockAmount"]
+        //unlockAmount = (now - time locked)/(deadline - time locked)*amount
+        if(deadline <= now_ts){
+            //unlock rest
+            unlockAmount = amount - fundLocks[cycle+5]["unlockAmount"];
+            fundLocks[cycle+5]["unlockAmount"] += unlockAmount;
+        }
+        else{
+            unlockAmount = (now_ts - lockedTime)*amount/(deadline - lockedTime) - fundLocks[cycle+5]["unlockAmount"];
+            fundLocks[cycle+5]["unlockAmount"] += unlockAmount;
+        }
 
         UnlockFundEx(msg.sender, cycle, now_ts, fundLocks[cycle+5]["deadline"], unlockAmount);
+    }
+
+    function modifyFundsAdmin(address newAdmin) public{
+        require (msg.sender == fundsWallet || msg.sender == fundsAdmin);//only owner and admin can change who admin is
+
+        fundsAdmin = newAdmin;
     }
 
     function CPSTestToken1(string name, string symbol, uint8 decimals, uint256 totalSupply) public {
@@ -180,6 +214,7 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         _totalSupply = totalSupply;
         balances[msg.sender] = totalSupply;
         fundsWallet = msg.sender;
+        fundsAdmin = msg.sender;
         unitsOneEthCanBuy = 100;
     }
 
@@ -233,7 +268,7 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         require(_to != address(0));
         require(_value <= balances[msg.sender]);
         if(msg.sender == fundsWallet){
-            require(_value <= balances[msg.sender] - totalLockAmount());
+            require(_value <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
         }
 
         if(isContract(_to)) {
@@ -258,7 +293,7 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         require(_value <= allowed[_from][msg.sender]);
 
         if(_from == fundsWallet){
-            require(_value <= balances[_from] - totalLockAmount());
+            require(_value <= balances[_from] - totalLockAmount() && balances[_from] > totalLockAmount());
         }
 
         if(isContract(_to)) {
