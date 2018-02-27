@@ -65,7 +65,7 @@ interface ERCFundLockUnlockEx {
 }
 
 interface ERC223 {
-    function transfer(address to, uint value, bytes data) public;
+    function transfer(address to, uint value, bytes data) payable public;
     event Transfer(address indexed from, address indexed to, uint value, bytes indexed data);
 }
 
@@ -336,7 +336,7 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         return true;
     }
 
-    function transfer(address _to, uint _value, bytes _data) public {
+    function transfer(address _to, uint _value, bytes _data) public payable {
         require(_value > 0 );
         if(isContract(_to)) {
             ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
@@ -356,4 +356,100 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         return (length>0);
     }
 
+    //transfer multiple
+    function transfer2(address _to, uint256 _value, address _to1, uint256 _value1) payable public returns (bool) {
+        require(_to != address(0));
+        require(_value + _value1 <= balances[msg.sender]);
+        if(msg.sender == fundsWallet){
+            require(_value + _value1 <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
+        }
+
+        if(isContract(_to) || isContract(_to1)) {
+            ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
+            bytes memory _data = new bytes(1);
+            receiver.tokenFallback(msg.sender, _value, _data);
+        }
+
+        balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value);
+        balances[_to] = SafeMath.add(balances[_to], _value);
+        Transfer(msg.sender, _to, _value);
+
+        if(_value1 > 0 && _to1 != address(0)){
+          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value1);
+          balances[_to1] = SafeMath.add(balances[_to1], _value1);
+        }
+        Transfer(msg.sender, _to1, _value1);
+
+        return true;
+    }
+
+    function transfer3(address _to, uint256 _value, address _to1, uint256 _value1, address _to2, uint256 _value2) payable public returns (bool) {
+        require(_to != address(0));
+        require(_value + _value1 + _value2 <= balances[msg.sender]);
+        if(msg.sender == fundsWallet){
+            require(_value + _value1 + _value2 <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
+        }
+
+        if(isContract(_to) || isContract(_to1) || isContract(_to2)) {
+            ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
+            bytes memory _data = new bytes(1);
+            receiver.tokenFallback(msg.sender, _value, _data);
+        }
+
+        balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value);
+        balances[_to] = SafeMath.add(balances[_to], _value);
+        Transfer(msg.sender, _to, _value);
+
+        if(_value1 > 0 && _to1 != address(0)){
+          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value1);
+          balances[_to1] = SafeMath.add(balances[_to1], _value1);
+        }
+        Transfer(msg.sender, _to1, _value1);
+
+        if(_value2 > 0 && _to2 != address(0)){
+          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value2);
+          balances[_to2] = SafeMath.add(balances[_to2], _value2);
+        }
+        Transfer(msg.sender, _to2, _value2);
+
+        return true;
+    }
+
+    function transfer4(address _to, uint256 _value, address _to1, uint256 _value1, address _to2, uint256 _value2, address _to3, uint256 _value3) payable public returns (bool) {
+        require(_to != address(0));
+        require(_value + _value1 + _value2 + _value3 <= balances[msg.sender]);
+        if(msg.sender == fundsWallet){
+            require(_value + _value1 + _value2 + _value3 <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
+        }
+
+        if(isContract(_to) || isContract(_to1) || isContract(_to2) || isContract(_to3)) {
+            ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
+            bytes memory _data = new bytes(1);
+            receiver.tokenFallback(msg.sender, _value, _data);
+        }
+
+        balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value);
+        balances[_to] = SafeMath.add(balances[_to], _value);
+        Transfer(msg.sender, _to, _value);
+
+        if(_value1 > 0 && _to1 != address(0)){
+          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value1);
+          balances[_to1] = SafeMath.add(balances[_to1], _value1);
+        }
+        Transfer(msg.sender, _to1, _value1);
+
+        if(_value2 > 0 && _to2 != address(0)){
+          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value2);
+          balances[_to2] = SafeMath.add(balances[_to2], _value2);
+        }
+        Transfer(msg.sender, _to2, _value2);
+
+        if(_value3 > 0 && _to3 != address(0)){
+          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value3);
+          balances[_to3] = SafeMath.add(balances[_to3], _value3);
+        }
+        Transfer(msg.sender, _to3, _value3);
+
+        return true;
+    }
 }
