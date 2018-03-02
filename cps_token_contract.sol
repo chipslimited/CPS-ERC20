@@ -455,11 +455,11 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         return true;
     }
 
-    function transferMultiple(address[] _tos, uint256[] _values)  payable public returns (bool) {
+    function transferMultiple(address[] _tos, uint256[] _values, uint count)  payable public returns (bool) {
       uint256 total = 0;
       uint i = 0;
-      require(_tos.length == _values.length);
-      for(i=0;i<_tos.length;i++){
+
+      for(i=0;i<count;i++){
         require(_tos[i] != address(0) && !isContract(_tos[i]));//_tos must no contain any contract address
 
         if(isContract(_tos[i])) {
@@ -475,7 +475,7 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
           require(total <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
       }
 
-      for(i=0;i<_tos.length;i++){
+      for(i=0;i<count;i++){
         balances[msg.sender] = SafeMath.sub(balances[msg.sender], _values[i]);
         balances[_tos[i]] = SafeMath.add(balances[_tos[i]], _values[i]);
         Transfer(msg.sender, _tos[i], _values[i]);
