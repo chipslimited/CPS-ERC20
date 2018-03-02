@@ -49,27 +49,6 @@ interface ERC20 {
 
 }
 
-//Lock amount of fund and unlock automatically after deadline
-interface ERCFundLock{
-    function lockFund (uint cycle, uint numOfSeconds, uint256 amount) public;
-    function unlockFund (uint cycle) public;
-
-    event LockFund(address indexed from, uint deadline, uint256 amount);
-    event UnlockFund(address indexed from, uint deadline, uint256 amount);
-}
-
-//lock amount of fund
-//each time unlockFundEx is called
-//unlock unlockAmount = (now - time locked)/(deadline - time locked)*amount
-//
-interface ERCFundLockUnlockEx {
-    function lockFundEx (uint cycle, uint numOfSeconds, uint256 amount) public;
-    function unlockFundEx (uint cycle) public;
-
-    event LockFundEx(address indexed from, uint deadline, uint256 amount);
-    event UnlockFundEx(address indexed from, uint cycle, uint unlockTimestamp, uint deadline, uint256 unlockAmount);
-}
-
 interface ERC223 {
     function transfer(address to, uint value, bytes data) payable public;
     event Transfer(address indexed from, address indexed to, uint value, bytes indexed data);
@@ -80,11 +59,93 @@ contract ERC223ReceivingContract {
     function tokenFallback(address _from, uint _value, bytes _data) public;
 }
 
-contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
+
+contract ERCAddressFrozenFund is ERC20{
+
+    struct LockedWallet {
+        address owner; // the owner of the locked wallet, he/she must secure the private key
+        uint256 balance; //
+        uint256 releasetime;  //
+    }
+
+    mapping (address => LockedWallet) internal lockedFunds;
+
+    address public owner;
+    address public fundsAdmin;// Who can lock and unlock fund?
+
+    uint8 constant FROZEN_INDEX_MAX = 10;
+    uint8 constant FROZEN_INDEX_MIN = 1;
+
+    mapping (address => mapping (uint256 => LockedWallet)) internal addressMultiFrozen;//address -> index -> (deadline, amount), if deadline is zero, nothing is frozen
+    mapping (address => LockedWallet) addressFrozenFund; //address -> (deadline, amount),freeze fund of an address its so that no token can be transferred out until deadline
+
+    function modifyFundsAdmin(address newAdmin) public;
+    function mintToken(address _owner, uint256 amount) internal;
+    function burnToken(address _owner, uint256 amount) internal;
+
+    event LockBalance(address indexed addressOwner, uint256 releasetime, uint256 amount);
+    event LockSubBalance(address indexed addressOwner, uint256 index, uint256 releasetime, uint256 amount);
+    event UnlockBalance(address indexed addressOwner, uint256 releasetime, uint256 amount);
+    event UnlockSubBalance(address indexed addressOwner, uint256 index, uint256 releasetime, uint256 amount);
+
+    function releaseTimeOf(address _owner) public view returns (uint256 releaseTime) {
+        return addressFrozenFund[_owner].releasetime;
+    }
+
+    function lockedBalanceOf(address _owner) public view returns (uint256 lockedBalance) {
+        return addressFrozenFund[_owner].balance;
+    }
+
+    function  lockBalance(address _owner, uint256 numOfSeconds, uint256 amount) public{
+        require(address(0) != _owner && amount > 0 && numOfSeconds > 0 && balanceOf(_owner) > amount);
+
+        addressFrozenFund[_owner].releasetime = now + numOfSeconds;
+        addressFrozenFund[_owner].balance += amount;
+        burnToken(_owner, amount);
+
+        LockBalance(_owner, addressFrozenFund[_owner].releasetime, amount);
+    }
+
+    //_owner must call this function explicitly to release locked balance in a locked wallet
+    function releaseLockedBalance(address _owner) public {
+        require(address(0) != _owner && lockedBalanceOf(_owner) > 0 && releaseTimeOf(_owner) <= now);
+        mintToken(_owner, lockedBalanceOf(_owner));
+        delete addressFrozenFund[_owner];
+    }
+
+    function releaseTimeOfSub(address _owner, uint8 index) public view returns (uint256 releaseTimeSub) {
+        require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
+        return addressMultiFrozen[_owner][index].releasetime;
+    }
+
+    function lockedBalanceOfSub(address _owner, uint8 index) public view returns (uint256 lockedBalanceSub) {
+        require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
+        return addressMultiFrozen[_owner][index].balance;
+    }
+
+    function lockedBalanceSub(address _owner, uint8 index, uint256 numOfSeconds, uint256 amount) public{
+        require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
+        require(address(0) != _owner && amount > 0 && numOfSeconds > 0 && balanceOf(_owner) > amount);
+
+        addressMultiFrozen[_owner][index].releasetime = now + numOfSeconds;
+        addressMultiFrozen[_owner][index].balance += amount;
+        burnToken(_owner, amount);
+
+        LockSubBalance(_owner, index, addressMultiFrozen[_owner][index].releasetime, amount);
+    }
+
+    //_owner must call this function explicitly to release locked balance in a sub wallet
+    function releaseLockedBalanceSub(address _owner, uint8 index) public {
+        require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
+        require(address(0) != _owner && lockedBalanceOfSub(_owner, index) > 0 && releaseTimeOfSub(_owner, index) <= now);
+        mintToken(_owner, lockedBalanceOfSub(_owner, index));
+        delete addressMultiFrozen[_owner][index];
+    }
+}
+
+contract CPSTestToken1 is ERC20, ERC223,ERCAddressFrozenFund {
 
     using SafeMath for uint;
-
-    uint8 constant TOTAL_CYCLES = 5;
 
     string internal _name;
     string internal _symbol;
@@ -93,126 +154,10 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
     uint256 public unitsOneEthCanBuy;     // How many units of your coin can be bought by 1 ETH?
     uint256 public totalEthInWei;         // WEI is the smallest unit of ETH (the equivalent of cent in USD or satoshi in BTC). We'll store the total ETH raised via our ICO here.
     address public fundsWallet;           // Where should the raised ETH go?
-    address public fundsAdmin;            // Who can lock and unlock fund?
 
     mapping (address => uint256) internal balances;
     mapping (address => mapping (address => uint256)) internal allowed;
-    mapping (uint => mapping (string => uint256)) internal fundLocks;
 
-    struct LockedWallet {
-        address owner; // the owner of the locked wallet, he/she must secure the private key
-        uint256 balance; // 
-        uint releasetime;  // 
-    }
-
-    mapping (address => LockedWallet) internal lockedFunds;
-
-
-    function lockFund (uint cycle, uint numOfSeconds, uint256 amount) public  {
-
-        require(cycle > 0 && cycle <= TOTAL_CYCLES && amount > 0 && numOfSeconds > 0 && (fundLocks[cycle]["deadline"] == 0||fundLocks[cycle]["deadline"] < now));
-        require(balances[fundsWallet] - totalLockAmount() > amount);
-        require (msg.sender == fundsWallet || msg.sender == fundsAdmin);
-
-        fundLocks[cycle]["deadline"] = now + numOfSeconds;
-        fundLocks[cycle]["amount"] = amount;
-
-        LockFund(msg.sender, fundLocks[cycle]["deadline"], amount);
-    }
-
-    function lockedDeadline(uint cycle) public view returns (uint256) {
-        return fundLocks[cycle]["deadline"];
-    }
-
-    function lockedAmount(uint cycle) public view returns (uint256) {
-        return fundLocks[cycle]["amount"];
-    }
-
-    function lockedExDeadline(uint cycle) public view returns (uint256) {
-        return fundLocks[cycle+5]["deadline"];
-    }
-
-    function lockedExAmount(uint cycle) public view returns (uint256) {
-        return fundLocks[cycle+5]["amount"]-fundLocks[cycle+5]["unlockedAmount"];
-    }
-
-    function unlockFund (uint cycle) public{
-        require (cycle > 0 && cycle <= TOTAL_CYCLES &&
-        (fundLocks[cycle]["deadline"] < now) &&
-        fundLocks[cycle]["amount"] > 0
-        );
-        require (msg.sender == fundsWallet || msg.sender == fundsAdmin);
-
-        fundLocks[cycle]["deadline"] = 0;
-
-        var amount = fundLocks[cycle]["amount"];
-        fundLocks[cycle]["amount"] = 0;
-
-        LockFund(msg.sender, fundLocks[cycle]["deadline"], amount);
-    }
-
-    function totalLockAmount() public view returns (uint256) {
-        uint256 amount = 0;
-        uint i = 0;
-
-        for(i=1;i<=TOTAL_CYCLES;i++){
-            if(fundLocks[i]["deadline"] > now){
-                amount += fundLocks[i]["amount"];
-            }
-        }
-        for(i=1;i<=TOTAL_CYCLES;i++){
-            amount += fundLocks[i+5]["amount"]-fundLocks[i+5]["unlockAmount"];
-        }
-        return amount;
-    }
-
-    function lockFundEx (uint cycle, uint numOfSeconds, uint256 amount) public{
-        require (cycle > 0 && cycle <= TOTAL_CYCLES && amount > 0 && numOfSeconds > 0);
-        require (balances[fundsWallet] - totalLockAmount() > amount);
-        require (msg.sender == fundsWallet || msg.sender == fundsAdmin);
-
-        if(fundLocks[cycle]["deadline"] <= now && fundLocks[cycle]["deadline"] > 0){
-            if(fundLocks[cycle+5]["amount"] > fundLocks[cycle+5]["unlockAmount"]){
-                unlockFundEx(cycle);
-            }
-        }
-
-        fundLocks[cycle+5]["lockTime"] = now;
-        fundLocks[cycle+5]["deadline"] = now + numOfSeconds;
-        fundLocks[cycle+5]["amount"] = amount;
-        fundLocks[cycle+5]["unlockAmount"] = 0;
-
-        LockFundEx(msg.sender, fundLocks[cycle+5]["deadline"], amount);
-    }
-
-
-    function unlockFundEx (uint cycle) public{
-
-        require (
-            cycle > 0 && cycle <= TOTAL_CYCLES &&
-            fundLocks[cycle+5]["amount"] > fundLocks[cycle+5]["unlockAmount"]
-        );
-        require (msg.sender == fundsWallet || msg.sender == fundsAdmin);
-
-        uint256 now_ts = now;
-        uint256 lockedTime = fundLocks[cycle+5]["lockTime"];
-        uint256 unlockAmount = 0;
-        uint256 amount = fundLocks[cycle+5]["amount"];
-        uint256 deadline = fundLocks[cycle+5]["deadline"];
-        //TODO: calculate unlockAmount and update fundLocks[cycle+5]["unlockAmount"]
-        //unlockAmount = (now - time locked)/(deadline - time locked)*amount
-        if(deadline <= now_ts){
-            //unlock rest
-            unlockAmount = amount - fundLocks[cycle+5]["unlockAmount"];
-            fundLocks[cycle+5]["unlockAmount"] += unlockAmount;
-        }
-        else{
-            unlockAmount = (now_ts - lockedTime)*amount/(deadline - lockedTime) - fundLocks[cycle+5]["unlockAmount"];
-            fundLocks[cycle+5]["unlockAmount"] += unlockAmount;
-        }
-
-        UnlockFundEx(msg.sender, cycle, now_ts, fundLocks[cycle+5]["deadline"], unlockAmount);
-    }
 
     function modifyFundsAdmin(address newAdmin) public{
         require (msg.sender == fundsWallet || msg.sender == fundsAdmin);//only owner and admin can change who admin is
@@ -229,6 +174,8 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         fundsWallet = msg.sender;
         fundsAdmin = msg.sender;
         unitsOneEthCanBuy = 100;
+
+        owner = msg.sender;
     }
 
     function name()
@@ -259,6 +206,13 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         return _totalSupply;
     }
 
+    function mintToken(address _owner, uint256 amount) internal {
+        balances[_owner] = SafeMath.add(balances[_owner], amount);
+    }
+
+    function burnToken(address _owner, uint256 amount) internal {
+        balances[_owner] = SafeMath.sub(balances[_owner], amount);
+    }
 
     function() payable public {
 
@@ -266,10 +220,10 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
 
         totalEthInWei = totalEthInWei + msg.value;
         uint256 amount = msg.value/10^decimals() * unitsOneEthCanBuy;
-        require (balances[fundsWallet] - totalLockAmount() >= amount);
+        require (balances[fundsWallet] >= amount);
 
-        balances[fundsWallet] = balances[fundsWallet] - amount;
-        balances[msg.sender] = balances[msg.sender] + amount;
+        balances[fundsWallet] = SafeMath.sub(balances[fundsWallet], amount);
+        balances[msg.sender] = SafeMath.add(balances[msg.sender], amount);
 
         Transfer(fundsWallet, msg.sender, amount); // Broadcast a message to the blockchain
 
@@ -280,9 +234,6 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
     function transfer(address _to, uint256 _value) public returns (bool) {
         require(_to != address(0));
         require(_value <= balances[msg.sender]);
-        if(msg.sender == fundsWallet){
-            require(_value <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
-        }
 
         if(isContract(_to)) {
             ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
@@ -307,7 +258,7 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         require(_value <= allowed[_from][msg.sender]);
 
         if(_from == fundsWallet){
-            require(_value <= balances[_from] - totalLockAmount() && balances[_from] > totalLockAmount());
+            require(_value <= balances[_from]);
         }
 
         if(isContract(_to)) {
@@ -374,100 +325,6 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         return (length>0);
     }
 
-    //transfer multiple
-    function transfer2(address _to, uint256 _value, address _to1, uint256 _value1) payable public returns (bool) {
-        require(_to != address(0));
-
-        if(isContract(_to) || isContract(_to1)) {
-            require(_to == address(0) || _to1 == address(0));//transfer must fail if to is contract
-        }
-
-        require(_value + _value1 <= balances[msg.sender]);
-        if(msg.sender == fundsWallet){
-            require(_value + _value1 <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
-        }
-
-        balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value);
-        balances[_to] = SafeMath.add(balances[_to], _value);
-        Transfer(msg.sender, _to, _value);
-
-        if(_value1 > 0 && _to1 != address(0)){
-          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value1);
-          balances[_to1] = SafeMath.add(balances[_to1], _value1);
-        }
-        Transfer(msg.sender, _to1, _value1);
-
-        return true;
-    }
-
-    function transfer3(address _to, uint256 _value, address _to1, uint256 _value1, address _to2, uint256 _value2) payable public returns (bool) {
-        require(_to != address(0));
-        if(isContract(_to) || isContract(_to1) || isContract(_to2)) {
-            require(_to == address(0) || _to1 == address(0) || _to2 == address(0));//transfer must fail if to is contract
-        }
-        require(_value + _value1 + _value2 <= balances[msg.sender]);
-        if(msg.sender == fundsWallet){
-            require(_value + _value1 + _value2 <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
-        }
-
-        balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value);
-        balances[_to] = SafeMath.add(balances[_to], _value);
-        Transfer(msg.sender, _to, _value);
-
-        if(_value1 > 0 && _to1 != address(0)){
-          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value1);
-          balances[_to1] = SafeMath.add(balances[_to1], _value1);
-        }
-        Transfer(msg.sender, _to1, _value1);
-
-        if(_value2 > 0 && _to2 != address(0)){
-          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value2);
-          balances[_to2] = SafeMath.add(balances[_to2], _value2);
-        }
-        Transfer(msg.sender, _to2, _value2);
-
-        return true;
-    }
-
-    function transfer4(address _to, uint256 _value, address _to1, uint256 _value1, address _to2, uint256 _value2, address _to3, uint256 _value3) payable public returns (bool) {
-        require(_to != address(0));
-        if(isContract(_to) || isContract(_to1) || isContract(_to2) || isContract(_to3)) {
-            require(_to == address(0) || _to1 == address(0) || _to2 == address(0) || _to3 == address(0));//transfer must fail if to is contract
-        }
-        require(_value + _value1 + _value2 + _value3 <= balances[msg.sender]);
-        if(msg.sender == fundsWallet){
-            require(_value + _value1 + _value2 + _value3 <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
-        }
-
-        if(isContract(_to) || isContract(_to1) || isContract(_to2) || isContract(_to3)) {
-            require(1 == 2);//must fail
-        }
-
-        balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value);
-        balances[_to] = SafeMath.add(balances[_to], _value);
-        Transfer(msg.sender, _to, _value);
-
-        if(_value1 > 0 && _to1 != address(0)){
-          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value1);
-          balances[_to1] = SafeMath.add(balances[_to1], _value1);
-        }
-        Transfer(msg.sender, _to1, _value1);
-
-        if(_value2 > 0 && _to2 != address(0)){
-          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value2);
-          balances[_to2] = SafeMath.add(balances[_to2], _value2);
-        }
-        Transfer(msg.sender, _to2, _value2);
-
-        if(_value3 > 0 && _to3 != address(0)){
-          balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value3);
-          balances[_to3] = SafeMath.add(balances[_to3], _value3);
-        }
-        Transfer(msg.sender, _to3, _value3);
-
-        return true;
-    }
-
     function transferMultiple(address[] _tos, uint256[] _values, uint count)  payable public returns (bool) {
       uint256 total = 0;
       uint i = 0;
@@ -480,13 +337,10 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
             bytes memory _data = new bytes(1);
             receiver.tokenFallback(msg.sender, _values[i], _data);
         }
-        total += _values[i];
+        total = SafeMath.add(total, _values[i]);
       }
 
       require(total <= balances[msg.sender]);
-      if(msg.sender == fundsWallet){
-          require(total <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
-      }
 
       for(i=0;i<count;i++){
         balances[msg.sender] = SafeMath.sub(balances[msg.sender], _values[i]);
