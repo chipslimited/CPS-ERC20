@@ -280,6 +280,7 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value);
         balances[_to] = SafeMath.add(balances[_to], _value);
         Transfer(msg.sender, _to, _value);
+
         return true;
     }
 
@@ -305,6 +306,8 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         balances[_from] = SafeMath.sub(balances[_from], _value);
         balances[_to] = SafeMath.add(balances[_to], _value);
         allowed[_from][msg.sender] = SafeMath.sub(allowed[_from][msg.sender], _value);
+        allowed[_from][msg.sender] = SafeMath.sub(allowed[_from][msg.sender], _value);
+
         Transfer(_from, _to, _value);
         return true;
     }
@@ -342,8 +345,10 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
             ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
             receiver.tokenFallback(msg.sender, _value, _data);
         }
+
         balances[msg.sender] = balances[msg.sender].sub(_value);
         balances[_to] = balances[_to].add(_value);
+
         Transfer(msg.sender, _to, _value, _data);
     }
 
@@ -359,15 +364,14 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
     //transfer multiple
     function transfer2(address _to, uint256 _value, address _to1, uint256 _value1) payable public returns (bool) {
         require(_to != address(0));
+
+        if(isContract(_to) || isContract(_to1)) {
+            require(_to == address(0) || _to1 == address(0));//transfer must fail if to is contract
+        }
+
         require(_value + _value1 <= balances[msg.sender]);
         if(msg.sender == fundsWallet){
             require(_value + _value1 <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
-        }
-
-        if(isContract(_to) || isContract(_to1)) {
-            ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
-            bytes memory _data = new bytes(1);
-            receiver.tokenFallback(msg.sender, _value, _data);
         }
 
         balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value);
@@ -385,15 +389,12 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
 
     function transfer3(address _to, uint256 _value, address _to1, uint256 _value1, address _to2, uint256 _value2) payable public returns (bool) {
         require(_to != address(0));
+        if(isContract(_to) || isContract(_to1) || isContract(_to2)) {
+            require(_to == address(0) || _to1 == address(0) || _to2 == address(0));//transfer must fail if to is contract
+        }
         require(_value + _value1 + _value2 <= balances[msg.sender]);
         if(msg.sender == fundsWallet){
             require(_value + _value1 + _value2 <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
-        }
-
-        if(isContract(_to) || isContract(_to1) || isContract(_to2)) {
-            ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
-            bytes memory _data = new bytes(1);
-            receiver.tokenFallback(msg.sender, _value, _data);
         }
 
         balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value);
@@ -417,15 +418,16 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
 
     function transfer4(address _to, uint256 _value, address _to1, uint256 _value1, address _to2, uint256 _value2, address _to3, uint256 _value3) payable public returns (bool) {
         require(_to != address(0));
+        if(isContract(_to) || isContract(_to1) || isContract(_to2) || isContract(_to3)) {
+            require(_to == address(0) || _to1 == address(0) || _to2 == address(0) || _to3 == address(0));//transfer must fail if to is contract
+        }
         require(_value + _value1 + _value2 + _value3 <= balances[msg.sender]);
         if(msg.sender == fundsWallet){
             require(_value + _value1 + _value2 + _value3 <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
         }
 
         if(isContract(_to) || isContract(_to1) || isContract(_to2) || isContract(_to3)) {
-            ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
-            bytes memory _data = new bytes(1);
-            receiver.tokenFallback(msg.sender, _value, _data);
+            require(1 == 2);//must fail
         }
 
         balances[msg.sender] = SafeMath.sub(balances[msg.sender], _value);
@@ -451,5 +453,34 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
         Transfer(msg.sender, _to3, _value3);
 
         return true;
+    }
+
+    function transferMultiple(address[] _tos, uint256[] _values)  payable public returns (bool) {
+      uint256 total = 0;
+      uint i = 0;
+      require(_tos.length == _values.length);
+      for(i=0;i<_tos.length;i++){
+        require(_tos[i] != address(0) && !isContract(_tos[i]));//_tos must no contain any contract address
+
+        if(isContract(_tos[i])) {
+            ERC223ReceivingContract receiver = ERC223ReceivingContract(_tos[i]);
+            bytes memory _data = new bytes(1);
+            receiver.tokenFallback(msg.sender, _values[i], _data);
+        }
+        total += _values[i];
+      }
+
+      require(total <= balances[msg.sender]);
+      if(msg.sender == fundsWallet){
+          require(total <= balances[msg.sender] - totalLockAmount() && balances[msg.sender] > totalLockAmount());
+      }
+
+      for(i=0;i<_tos.length;i++){
+        balances[msg.sender] = SafeMath.sub(balances[msg.sender], _values[i]);
+        balances[_tos[i]] = SafeMath.add(balances[_tos[i]], _values[i]);
+        Transfer(msg.sender, _tos[i], _values[i]);
+      }
+
+      return true;
     }
 }
