@@ -99,6 +99,13 @@ contract CPSTestToken1 is ERC20, ERC223, ERCFundLock, ERCFundLockUnlockEx {
     mapping (address => mapping (address => uint256)) internal allowed;
     mapping (uint => mapping (string => uint256)) internal fundLocks;
 
+    struct LockedWallet {
+        address owner; // the owner of the locked wallet, he/she must secure the private key
+        uint256 balance; // 
+        uint releasetime;  // 
+    }
+
+    mapping (address => LockedWallet) internal lockedFunds;
 
 
     function lockFund (uint cycle, uint numOfSeconds, uint256 amount) public  {
