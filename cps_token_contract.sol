@@ -110,6 +110,9 @@ contract ERCAddressFrozenFund is ERC20{
     function releaseLockedBalance(address _owner) public {
         require(address(0) != _owner && lockedBalanceOf(_owner) > 0 && releaseTimeOf(_owner) <= now);
         mintToken(_owner, lockedBalanceOf(_owner));
+
+        UnlockBalance(_owner, addressFrozenFund[_owner].releasetime, lockedBalanceOf(_owner));
+
         delete addressFrozenFund[_owner];
     }
 
@@ -139,6 +142,9 @@ contract ERCAddressFrozenFund is ERC20{
         require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
         require(address(0) != _owner && lockedBalanceOfSub(_owner, index) > 0 && releaseTimeOfSub(_owner, index) <= now);
         mintToken(_owner, lockedBalanceOfSub(_owner, index));
+
+        UnlockSubBalance(_owner, index, addressMultiFrozen[_owner][index].releasetime, lockedBalanceOfSub(_owner, index));
+
         delete addressMultiFrozen[_owner][index];
     }
 }
