@@ -64,8 +64,11 @@ contract ERCAddressFrozenFund is ERC20{
 
     struct LockedWallet {
         address owner; // the owner of the locked wallet, he/she must secure the private key
-        uint256 balance; //
-        uint256 releasetime;  //
+        uint256 amount; // 
+        uint256 start; // timestamp when "lock" function is executed
+        uint256 duration; // duration period in seconds. if we want to lock an amount for 
+        uint256 release;  // release = start+duration
+        // "start" and "duration" is for bookkeeping purpose only. Only "release" will be actually checked once unlock function is called
     }
 
     mapping (address => LockedWallet) internal lockedFunds;
