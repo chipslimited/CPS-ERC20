@@ -92,21 +92,24 @@ contract ERCAddressFrozenFund is ERC20{
     event UnlockSubBalance(address indexed addressOwner, uint256 index, uint256 releasetime, uint256 amount);
 
     function releaseTimeOf(address _owner) public view returns (uint256 releaseTime) {
-        return addressFrozenFund[_owner].releasetime;
+        return addressFrozenFund[_owner].release;
     }
 
     function lockedBalanceOf(address _owner) public view returns (uint256 lockedBalance) {
-        return addressFrozenFund[_owner].balance;
+        return addressFrozenFund[_owner].amount;
     }
 
     function  lockBalance(address _owner, uint256 numOfSeconds, uint256 amount) public{
         require(address(0) != _owner && amount > 0 && numOfSeconds > 0 && balanceOf(_owner) > amount);
+        require(addressFrozenFund[_owner].release <= now && addressFrozenFund[_owner].amount == 0);
 
-        addressFrozenFund[_owner].releasetime = now + numOfSeconds;
-        addressFrozenFund[_owner].balance += amount;
+        addressFrozenFund[_owner].start = now;
+        addressFrozenFund[_owner].duration = numOfSeconds;
+        addressFrozenFund[_owner].release = addressFrozenFund[_owner].start + numOfSeconds;
+        addressFrozenFund[_owner].amount = amount;
         burnToken(_owner, amount);
 
-        LockBalance(_owner, addressFrozenFund[_owner].releasetime, amount);
+        LockBalance(_owner, addressFrozenFund[_owner].release, amount);
     }
 
     //_owner must call this function explicitly to release locked balance in a locked wallet
@@ -114,30 +117,33 @@ contract ERCAddressFrozenFund is ERC20{
         require(address(0) != _owner && lockedBalanceOf(_owner) > 0 && releaseTimeOf(_owner) <= now);
         mintToken(_owner, lockedBalanceOf(_owner));
 
-        UnlockBalance(_owner, addressFrozenFund[_owner].releasetime, lockedBalanceOf(_owner));
+        UnlockBalance(_owner, addressFrozenFund[_owner].release, lockedBalanceOf(_owner));
 
         delete addressFrozenFund[_owner];
     }
 
     function releaseTimeOfSub(address _owner, uint8 index) public view returns (uint256 releaseTimeSub) {
         require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
-        return addressMultiFrozen[_owner][index].releasetime;
+        return addressMultiFrozen[_owner][index].release;
     }
 
     function lockedBalanceOfSub(address _owner, uint8 index) public view returns (uint256 lockedBalanceSub) {
         require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
-        return addressMultiFrozen[_owner][index].balance;
+        return addressMultiFrozen[_owner][index].amount;
     }
 
     function lockedBalanceSub(address _owner, uint8 index, uint256 numOfSeconds, uint256 amount) public{
         require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
         require(address(0) != _owner && amount > 0 && numOfSeconds > 0 && balanceOf(_owner) > amount);
+        require(addressMultiFrozen[_owner][index].release <= now && addressMultiFrozen[_owner][index].amount == 0);
 
-        addressMultiFrozen[_owner][index].releasetime = now + numOfSeconds;
-        addressMultiFrozen[_owner][index].balance += amount;
+        addressMultiFrozen[_owner][index].start = now;
+        addressMultiFrozen[_owner][index].release = addressMultiFrozen[_owner][index].start + numOfSeconds;
+        addressMultiFrozen[_owner][index].duration = numOfSeconds;
+        addressMultiFrozen[_owner][index].amount = amount;
         burnToken(_owner, amount);
 
-        LockSubBalance(_owner, index, addressMultiFrozen[_owner][index].releasetime, amount);
+        LockSubBalance(_owner, index, addressMultiFrozen[_owner][index].release, amount);
     }
 
     //_owner must call this function explicitly to release locked balance in a sub wallet
@@ -146,13 +152,13 @@ contract ERCAddressFrozenFund is ERC20{
         require(address(0) != _owner && lockedBalanceOfSub(_owner, index) > 0 && releaseTimeOfSub(_owner, index) <= now);
         mintToken(_owner, lockedBalanceOfSub(_owner, index));
 
-        UnlockSubBalance(_owner, index, addressMultiFrozen[_owner][index].releasetime, lockedBalanceOfSub(_owner, index));
+        UnlockSubBalance(_owner, index, addressMultiFrozen[_owner][index].release, lockedBalanceOfSub(_owner, index));
 
         delete addressMultiFrozen[_owner][index];
     }
 }
 
-contract CPSTestToken1 is ERC20, ERC223,ERCAddressFrozenFund {
+contract CPSTestToken1 is ERC223,ERCAddressFrozenFund {
 
     using SafeMath for uint;
 
@@ -335,28 +341,32 @@ contract CPSTestToken1 is ERC20, ERC223,ERCAddressFrozenFund {
     }
 
     function transferMultiple(address[] _tos, uint256[] _values, uint count)  payable public returns (bool) {
-      uint256 total = 0;
-      uint i = 0;
+        uint256 total = 0;
+        uint256 total_prev = 0;
+        uint i = 0;
 
-      for(i=0;i<count;i++){
-        require(_tos[i] != address(0) && !isContract(_tos[i]));//_tos must no contain any contract address
+        for(i=0;i<count;i++){
+            require(_tos[i] != address(0) && !isContract(_tos[i]));//_tos must no contain any contract address
 
-        if(isContract(_tos[i])) {
-            ERC223ReceivingContract receiver = ERC223ReceivingContract(_tos[i]);
-            bytes memory _data = new bytes(1);
-            receiver.tokenFallback(msg.sender, _values[i], _data);
+            if(isContract(_tos[i])) {
+                ERC223ReceivingContract receiver = ERC223ReceivingContract(_tos[i]);
+                bytes memory _data = new bytes(1);
+                receiver.tokenFallback(msg.sender, _values[i], _data);
+            }
+
+            total_prev = total;
+            total = SafeMath.add(total, _values[i]);
+            require(total >= total_prev);
         }
-        total = SafeMath.add(total, _values[i]);
-      }
 
-      require(total <= balances[msg.sender]);
+        require(total <= balances[msg.sender]);
 
-      for(i=0;i<count;i++){
-        balances[msg.sender] = SafeMath.sub(balances[msg.sender], _values[i]);
-        balances[_tos[i]] = SafeMath.add(balances[_tos[i]], _values[i]);
-        Transfer(msg.sender, _tos[i], _values[i]);
-      }
+        for(i=0;i<count;i++){
+            balances[msg.sender] = SafeMath.sub(balances[msg.sender], _values[i]);
+            balances[_tos[i]] = SafeMath.add(balances[_tos[i]], _values[i]);
+            Transfer(msg.sender, _tos[i], _values[i]);
+        }
 
-      return true;
+        return true;
     }
 }
