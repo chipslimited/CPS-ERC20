@@ -99,7 +99,10 @@ contract ERCAddressFrozenFund is ERC20{
         return addressFrozenFund[_owner].amount;
     }
 
-    function  lockBalance(address _owner, uint256 numOfSeconds, uint256 amount) public{
+    function  lockBalance(uint256 numOfSeconds, uint256 amount) public{
+
+        address _owner = msg.sender;
+
         require(address(0) != _owner && amount > 0 && numOfSeconds > 0 && balanceOf(_owner) > amount);
         require(addressFrozenFund[_owner].release <= now && addressFrozenFund[_owner].amount == 0);
 
@@ -113,7 +116,10 @@ contract ERCAddressFrozenFund is ERC20{
     }
 
     //_owner must call this function explicitly to release locked balance in a locked wallet
-    function releaseLockedBalance(address _owner) public {
+    function releaseLockedBalance() public {
+
+        address _owner = msg.sender;
+
         require(address(0) != _owner && lockedBalanceOf(_owner) > 0 && releaseTimeOf(_owner) <= now);
         mintToken(_owner, lockedBalanceOf(_owner));
 
@@ -122,40 +128,6 @@ contract ERCAddressFrozenFund is ERC20{
         delete addressFrozenFund[_owner];
     }
 
-    function releaseTimeOfSub(address _owner, uint8 index) public view returns (uint256 releaseTimeSub) {
-        require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
-        return addressMultiFrozen[_owner][index].release;
-    }
-
-    function lockedBalanceOfSub(address _owner, uint8 index) public view returns (uint256 lockedBalanceSub) {
-        require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
-        return addressMultiFrozen[_owner][index].amount;
-    }
-
-    function lockedBalanceSub(address _owner, uint8 index, uint256 numOfSeconds, uint256 amount) public{
-        require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
-        require(address(0) != _owner && amount > 0 && numOfSeconds > 0 && balanceOf(_owner) > amount);
-        require(addressMultiFrozen[_owner][index].release <= now && addressMultiFrozen[_owner][index].amount == 0);
-
-        addressMultiFrozen[_owner][index].start = now;
-        addressMultiFrozen[_owner][index].release = addressMultiFrozen[_owner][index].start + numOfSeconds;
-        addressMultiFrozen[_owner][index].duration = numOfSeconds;
-        addressMultiFrozen[_owner][index].amount = amount;
-        burnToken(_owner, amount);
-
-        LockSubBalance(_owner, index, addressMultiFrozen[_owner][index].release, amount);
-    }
-
-    //_owner must call this function explicitly to release locked balance in a sub wallet
-    function releaseLockedBalanceSub(address _owner, uint8 index) public {
-        require(index >= FROZEN_INDEX_MIN && index <= FROZEN_INDEX_MAX);
-        require(address(0) != _owner && lockedBalanceOfSub(_owner, index) > 0 && releaseTimeOfSub(_owner, index) <= now);
-        mintToken(_owner, lockedBalanceOfSub(_owner, index));
-
-        UnlockSubBalance(_owner, index, addressMultiFrozen[_owner][index].release, lockedBalanceOfSub(_owner, index));
-
-        delete addressMultiFrozen[_owner][index];
-    }
 }
 
 contract CPSTestToken1 is ERC223,ERCAddressFrozenFund {
