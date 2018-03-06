@@ -96,12 +96,12 @@ contract ERCAddressFrozenFund is ERC20{
 
         address _owner = msg.sender;
 
-        require(address(0) != _owner && amount > 0 && numOfSeconds > 0 && balanceOf(_owner) > amount);
+        require(address(0) != _owner && amount > 0 && duration > 0 && balanceOf(_owner) > amount);
         require(addressFrozenFund[_owner].release <= now && addressFrozenFund[_owner].amount == 0);
 
         addressFrozenFund[_owner].start = now;
         addressFrozenFund[_owner].duration = duration;
-        addressFrozenFund[_owner].release = addressFrozenFund[_owner].start + numOfSeconds;
+        addressFrozenFund[_owner].release = addressFrozenFund[_owner].start + duration;
         addressFrozenFund[_owner].amount = amount;
         burnToken(_owner, amount);
 
@@ -131,7 +131,6 @@ contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
     string internal _symbol;
     uint8 internal _decimals;
     uint256 internal _totalSupply;
-    uint256 public totalEthInWei;         // WEI is the smallest unit of ETH (the equivalent of cent in USD or satoshi in BTC). We'll store the total ETH raised via our ICO here.
     address public fundsWallet;           // Where should the raised ETH go?
 
     mapping (address => uint256) internal balances;
@@ -176,18 +175,6 @@ contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
     function() payable public {
 
         require(msg.sender == address(0));//disable ICO crowd sale 禁止ICO资金募集，因为本合约已经过了募集阶段
-
-        totalEthInWei = totalEthInWei + msg.value;
-        // uint256 amount = msg.value/10^decimals() * unitsOneEthCanBuy;
-        require (balances[fundsWallet] >= amount);
-
-        balances[fundsWallet] = SafeMath.sub(balances[fundsWallet], amount);
-        balances[msg.sender] = SafeMath.add(balances[msg.sender], amount);
-
-        // Transfer(fundsWallet, msg.sender, amount); // Broadcast a message to the blockchain
-
-        //Transfer ether to fundsWallet
-        fundsWallet.transfer(msg.value);
     }
 
     function transfer(address _to, uint256 _value) public returns (bool) {
