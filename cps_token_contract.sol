@@ -71,18 +71,11 @@ contract ERCAddressFrozenFund is ERC20{
         // "start" and "duration" is for bookkeeping purpose only. Only "release" will be actually checked once unlock function is called
     }
 
-    mapping (address => LockedWallet) internal lockedFunds;
 
     address public owner;
-    address public fundsAdmin;// Who can lock and unlock fund?
 
-    uint8 constant FROZEN_INDEX_MAX = 10;
-    uint8 constant FROZEN_INDEX_MIN = 1;
-
-    mapping (address => mapping (uint256 => LockedWallet)) internal addressMultiFrozen;//address -> index -> (deadline, amount), if deadline is zero, nothing is frozen
     mapping (address => LockedWallet) addressFrozenFund; //address -> (deadline, amount),freeze fund of an address its so that no token can be transferred out until deadline
 
-    function modifyFundsAdmin(address newAdmin) public;
     function mintToken(address _owner, uint256 amount) internal;
     function burnToken(address _owner, uint256 amount) internal;
 
@@ -99,7 +92,7 @@ contract ERCAddressFrozenFund is ERC20{
         return addressFrozenFund[_owner].amount;
     }
 
-    function  lockBalance(uint256 numOfSeconds, uint256 amount) public{
+    function lockBalance(uint256 duration, uint256 amount) public{
 
         address _owner = msg.sender;
 
@@ -107,7 +100,7 @@ contract ERCAddressFrozenFund is ERC20{
         require(addressFrozenFund[_owner].release <= now && addressFrozenFund[_owner].amount == 0);
 
         addressFrozenFund[_owner].start = now;
-        addressFrozenFund[_owner].duration = numOfSeconds;
+        addressFrozenFund[_owner].duration = duration;
         addressFrozenFund[_owner].release = addressFrozenFund[_owner].start + numOfSeconds;
         addressFrozenFund[_owner].amount = amount;
         burnToken(_owner, amount);
@@ -130,7 +123,7 @@ contract ERCAddressFrozenFund is ERC20{
 
 }
 
-contract CPSTestToken1 is ERC223,ERCAddressFrozenFund {
+contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
 
     using SafeMath for uint;
 
@@ -145,12 +138,6 @@ contract CPSTestToken1 is ERC223,ERCAddressFrozenFund {
     mapping (address => mapping (address => uint256)) internal allowed;
 
 
-    function modifyFundsAdmin(address newAdmin) public{
-        require (msg.sender == fundsWallet || msg.sender == fundsAdmin);//only owner and admin can change who admin is
-
-        fundsAdmin = newAdmin;
-    }
-
     function CPSTestToken1(string name, string symbol, uint8 decimals, uint256 totalSupply) public {
         _symbol = symbol;
         _name = name;
@@ -158,36 +145,23 @@ contract CPSTestToken1 is ERC223,ERCAddressFrozenFund {
         _totalSupply = totalSupply;
         balances[msg.sender] = totalSupply;
         fundsWallet = msg.sender;
-        fundsAdmin = msg.sender;
 
         owner = msg.sender;
     }
 
-    function name()
-    public
-    view
-    returns (string) {
+    function name() public view returns (string) {
         return _name;
     }
 
-    function symbol()
-    public
-    view
-    returns (string) {
+    function symbol() public view returns (string) {
         return _symbol;
     }
 
-    function decimals()
-    public
-    view
-    returns (uint8) {
+    function decimals() public view returns (uint8) {
         return _decimals;
     }
 
-    function totalSupply()
-    public
-    view
-    returns (uint256) {
+    function totalSupply() public view returns (uint256) {
         return _totalSupply;
     }
 
