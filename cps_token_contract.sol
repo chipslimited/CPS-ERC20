@@ -138,7 +138,6 @@ contract CPSTestToken1 is ERC223,ERCAddressFrozenFund {
     string internal _symbol;
     uint8 internal _decimals;
     uint256 internal _totalSupply;
-    uint256 public unitsOneEthCanBuy;     // How many units of your coin can be bought by 1 ETH?
     uint256 public totalEthInWei;         // WEI is the smallest unit of ETH (the equivalent of cent in USD or satoshi in BTC). We'll store the total ETH raised via our ICO here.
     address public fundsWallet;           // Where should the raised ETH go?
 
@@ -160,7 +159,6 @@ contract CPSTestToken1 is ERC223,ERCAddressFrozenFund {
         balances[msg.sender] = totalSupply;
         fundsWallet = msg.sender;
         fundsAdmin = msg.sender;
-        unitsOneEthCanBuy = 100;
 
         owner = msg.sender;
     }
@@ -206,13 +204,13 @@ contract CPSTestToken1 is ERC223,ERCAddressFrozenFund {
         require(msg.sender == address(0));//disable ICO crowd sale 禁止ICO资金募集，因为本合约已经过了募集阶段
 
         totalEthInWei = totalEthInWei + msg.value;
-        uint256 amount = msg.value/10^decimals() * unitsOneEthCanBuy;
+        // uint256 amount = msg.value/10^decimals() * unitsOneEthCanBuy;
         require (balances[fundsWallet] >= amount);
 
         balances[fundsWallet] = SafeMath.sub(balances[fundsWallet], amount);
         balances[msg.sender] = SafeMath.add(balances[msg.sender], amount);
 
-        Transfer(fundsWallet, msg.sender, amount); // Broadcast a message to the blockchain
+        // Transfer(fundsWallet, msg.sender, amount); // Broadcast a message to the blockchain
 
         //Transfer ether to fundsWallet
         fundsWallet.transfer(msg.value);
