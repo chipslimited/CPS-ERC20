@@ -96,7 +96,7 @@ contract ERCAddressFrozenFund is ERC20{
 
         address _owner = msg.sender;
 
-        require(address(0) != _owner && amount > 0 && duration > 0 && balanceOf(_owner) > amount);
+        require(address(0) != _owner && amount > 0 && duration > 0 && balanceOf(_owner) >= amount);
         require(addressFrozenFund[_owner].release <= now && addressFrozenFund[_owner].amount == 0);
 
         addressFrozenFund[_owner].start = now;
