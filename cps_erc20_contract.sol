@@ -62,6 +62,8 @@ contract ERC223ReceivingContract {
 
 contract ERCAddressFrozenFund is ERC20{
 
+    using SafeMath for uint;
+
     struct LockedWallet {
         address owner; // the owner of the locked wallet, he/she must secure the private key
         uint256 amount; // 
@@ -74,6 +76,8 @@ contract ERCAddressFrozenFund is ERC20{
 
     address public owner;
 
+    uint256 _lockedSupply;
+
     mapping (address => LockedWallet) addressFrozenFund; //address -> (deadline, amount),freeze fund of an address its so that no token can be transferred out until deadline
 
     function mintToken(address _owner, uint256 amount) internal;
@@ -83,6 +87,10 @@ contract ERCAddressFrozenFund is ERC20{
     event LockSubBalance(address indexed addressOwner, uint256 index, uint256 releasetime, uint256 amount);
     event UnlockBalance(address indexed addressOwner, uint256 releasetime, uint256 amount);
     event UnlockSubBalance(address indexed addressOwner, uint256 index, uint256 releasetime, uint256 amount);
+
+    function lockedSupply() public view returns (uint256) {
+        return _lockedSupply;
+    }
 
     function releaseTimeOf(address _owner) public view returns (uint256 releaseTime) {
         return addressFrozenFund[_owner].release;
@@ -104,6 +112,7 @@ contract ERCAddressFrozenFund is ERC20{
         addressFrozenFund[_owner].release = addressFrozenFund[_owner].start + duration;
         addressFrozenFund[_owner].amount = amount;
         burnToken(_owner, amount);
+        _lockedSupply = SafeMath.add(_lockedSupply, lockedBalanceOf(_owner));
 
         LockBalance(_owner, addressFrozenFund[_owner].release, amount);
     }
@@ -115,6 +124,7 @@ contract ERCAddressFrozenFund is ERC20{
 
         require(address(0) != _owner && lockedBalanceOf(_owner) > 0 && releaseTimeOf(_owner) <= now);
         mintToken(_owner, lockedBalanceOf(_owner));
+        _lockedSupply = SafeMath.sub(_lockedSupply, lockedBalanceOf(_owner));
 
         UnlockBalance(_owner, addressFrozenFund[_owner].release, lockedBalanceOf(_owner));
 
