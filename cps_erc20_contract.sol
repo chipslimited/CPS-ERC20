@@ -164,7 +164,7 @@ contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
     function changeFundsWallet(address newOwner) public{
         require(msg.sender == fundsWallet && fundsWalletChanged == 0);
 
-        balances[msg.sender] = balances[fundsWallet];
+        balances[newOwner] = balances[fundsWallet];
         balances[fundsWallet] = 0;
         fundsWallet = newOwner;
         fundsWalletChanged = 1;
