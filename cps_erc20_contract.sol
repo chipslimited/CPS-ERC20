@@ -66,9 +66,9 @@ contract ERCAddressFrozenFund is ERC20{
 
     struct LockedWallet {
         address owner; // the owner of the locked wallet, he/she must secure the private key
-        uint256 amount; // 
+        uint256 amount; //
         uint256 start; // timestamp when "lock" function is executed
-        uint256 duration; // duration period in seconds. if we want to lock an amount for 
+        uint256 duration; // duration period in seconds. if we want to lock an amount for
         uint256 release;  // release = start+duration
         // "start" and "duration" is for bookkeeping purpose only. Only "release" will be actually checked once unlock function is called
     }
@@ -148,12 +148,12 @@ contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
     mapping (address => mapping (address => uint256)) internal allowed;
 
 
-    function CPSTestToken1(string name, string symbol, uint8 decimals, uint256 totalSupply) public {
-        _symbol = symbol;
-        _name = name;
-        _decimals = decimals;
-        _totalSupply = totalSupply;
-        balances[msg.sender] = totalSupply;
+    function CPSTestToken1() public {
+        _symbol = 'CPS';
+        _name = 'CHIPS';
+        _decimals = 8;
+        _totalSupply = 100000000000000000;
+        balances[msg.sender] = _totalSupply;
         fundsWallet = msg.sender;
 
         owner = msg.sender;
