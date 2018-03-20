@@ -142,6 +142,7 @@ contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
     uint8 internal _decimals;
     uint256 internal _totalSupply;
     address public fundsWallet;           // Where should the raised ETH go?
+    uint256 internal fundsWalletChanged;
 
     mapping (address => uint256) internal balances;
     mapping (address => mapping (address => uint256)) internal allowed;
@@ -156,6 +157,15 @@ contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
         fundsWallet = msg.sender;
 
         owner = msg.sender;
+
+        fundsWalletChanged = 0;
+    }
+
+    function changeFundsWallet(address newOwner) public{
+        require(msg.sender == fundsWallet && fundsWalletChanged == 0);
+
+        fundsWallet = newOwner;
+        fundsWalletChanged = 1;
     }
 
     function name() public view returns (string) {
