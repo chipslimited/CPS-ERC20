@@ -60,80 +60,7 @@ contract ERC223ReceivingContract {
 }
 
 
-contract ERCAddressFrozenFund is ERC20{
-
-    using SafeMath for uint;
-
-    struct LockedWallet {
-        address owner; // the owner of the locked wallet, he/she must secure the private key
-        uint256 amount; //
-        uint256 start; // timestamp when "lock" function is executed
-        uint256 duration; // duration period in seconds. if we want to lock an amount for
-        uint256 release;  // release = start+duration
-        // "start" and "duration" is for bookkeeping purpose only. Only "release" will be actually checked once unlock function is called
-    }
-
-
-    address public owner;
-
-    uint256 _lockedSupply;
-
-    mapping (address => LockedWallet) addressFrozenFund; //address -> (deadline, amount),freeze fund of an address its so that no token can be transferred out until deadline
-
-    function mintToken(address _owner, uint256 amount) internal;
-    function burnToken(address _owner, uint256 amount) internal;
-
-    event LockBalance(address indexed addressOwner, uint256 releasetime, uint256 amount);
-    event LockSubBalance(address indexed addressOwner, uint256 index, uint256 releasetime, uint256 amount);
-    event UnlockBalance(address indexed addressOwner, uint256 releasetime, uint256 amount);
-    event UnlockSubBalance(address indexed addressOwner, uint256 index, uint256 releasetime, uint256 amount);
-
-    function lockedSupply() public view returns (uint256) {
-        return _lockedSupply;
-    }
-
-    function releaseTimeOf(address _owner) public view returns (uint256 releaseTime) {
-        return addressFrozenFund[_owner].release;
-    }
-
-    function lockedBalanceOf(address _owner) public view returns (uint256 lockedBalance) {
-        return addressFrozenFund[_owner].amount;
-    }
-
-    function lockBalance(uint256 duration, uint256 amount) public{
-
-        address _owner = msg.sender;
-
-        require(address(0) != _owner && amount > 0 && duration > 0 && balanceOf(_owner) >= amount);
-        require(addressFrozenFund[_owner].release <= now && addressFrozenFund[_owner].amount == 0);
-
-        addressFrozenFund[_owner].start = now;
-        addressFrozenFund[_owner].duration = duration;
-        addressFrozenFund[_owner].release = addressFrozenFund[_owner].start + duration;
-        addressFrozenFund[_owner].amount = amount;
-        burnToken(_owner, amount);
-        _lockedSupply = SafeMath.add(_lockedSupply, lockedBalanceOf(_owner));
-
-        LockBalance(_owner, addressFrozenFund[_owner].release, amount);
-    }
-
-    //_owner must call this function explicitly to release locked balance in a locked wallet
-    function releaseLockedBalance() public {
-
-        address _owner = msg.sender;
-
-        require(address(0) != _owner && lockedBalanceOf(_owner) > 0 && releaseTimeOf(_owner) <= now);
-        mintToken(_owner, lockedBalanceOf(_owner));
-        _lockedSupply = SafeMath.sub(_lockedSupply, lockedBalanceOf(_owner));
-
-        UnlockBalance(_owner, addressFrozenFund[_owner].release, lockedBalanceOf(_owner));
-
-        delete addressFrozenFund[_owner];
-    }
-
-}
-
-contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
+contract CPST is ERC223, ERC20 {
 
     using SafeMath for uint;
 
@@ -141,33 +68,41 @@ contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
     string internal _symbol;
     uint8 internal _decimals;
     uint256 internal _totalSupply;
-    address public fundsWallet;           // Where should the raised ETH go?
-    uint256 internal fundsWalletChanged;
+    address public owner;//only owner can change CEO
+    address public CEO;//only CEO can issue or repurchurse CPST
+    uint256 internal _owner_changed;//owner can only be changed once
 
     mapping (address => uint256) internal balances;
     mapping (address => mapping (address => uint256)) internal allowed;
 
+    event CreateCPST(address indexed issuer, address indexed owner, uint tokens);
+    event DestroyCPST(address indexed issuer, address indexed owner, uint tokens);
 
-    function CPSTestToken1() public {
-        _symbol = 'CPS';
-        _name = 'CPSCoin';
-        _decimals = 8;
-        _totalSupply = 100000000000000000;
-        balances[msg.sender] = _totalSupply;
-        fundsWallet = msg.sender;
 
+    function CPST() public {
+        _symbol = 'CPST';
+        _name = 'CPSTether';
+        _decimals = 2;
+        _totalSupply = 0;
         owner = msg.sender;
-
-        fundsWalletChanged = 0;
+        CEO = address(0);
+        _owner_changed = 0;
     }
 
-    function changeFundsWallet(address newOwner) public{
-        require(msg.sender == fundsWallet && fundsWalletChanged == 0);
+    function changeOwner(address newOwner) public{
+        require(msg.sender == owner && _owner_changed == 0);
 
-        balances[newOwner] = balances[fundsWallet];
-        balances[fundsWallet] = 0;
-        fundsWallet = newOwner;
-        fundsWalletChanged = 1;
+        balances[newOwner] = balances[owner];
+        balances[owner] = 0;
+        owner = newOwner;
+        CEO = newOwner;//if a new owner is set, the original CEO should be fired too.
+        _owner_changed = 1;
+    }
+
+    function changeCEO(address newCEO) public {
+        require(msg.sender == owner);
+
+        CEO = newCEO;
     }
 
     function name() public view returns (string) {
@@ -186,17 +121,27 @@ contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
         return _totalSupply;
     }
 
-    function mintToken(address _owner, uint256 amount) internal {
+    function createCPST(address _owner, uint256 amount) public {
+
+        require(msg.sender == CEO || msg.sender == owner);
+
+        _totalSupply = SafeMath.add(_totalSupply, amount);
         balances[_owner] = SafeMath.add(balances[_owner], amount);
+        CreateCPST(msg.sender, _owner, amount);
     }
 
-    function burnToken(address _owner, uint256 amount) internal {
+    function destroyCPST(address _owner, uint256 amount) public {
+
+        require( (msg.sender == CEO || msg.sender == owner) && balances[_owner] >= amount);
+
+        _totalSupply = SafeMath.sub(_totalSupply, amount);
         balances[_owner] = SafeMath.sub(balances[_owner], amount);
+        DestroyCPST(msg.sender, _owner, amount);
     }
 
     function() payable public {
 
-        require(msg.sender == address(0));//disable ICO crowd sale 禁止ICO资金募集，因为本合约已经过了募集阶段
+        require(msg.sender == address(0));//disable ICO crowd sale
     }
 
     function transfer(address _to, uint256 _value) public returns (bool) {
@@ -224,10 +169,6 @@ contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
         require(_to != address(0));
         require(_value <= balances[_from]);
         require(_value <= allowed[_from][msg.sender]);
-
-        if(_from == fundsWallet){
-            require(_value <= balances[_from]);
-        }
 
         if(isContract(_to)) {
             ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
@@ -293,33 +234,4 @@ contract CPSTestToken1 is ERC223, ERCAddressFrozenFund {
         return (length>0);
     }
 
-    function transferMultiple(address[] _tos, uint256[] _values, uint count)  payable public returns (bool) {
-        uint256 total = 0;
-        uint256 total_prev = 0;
-        uint i = 0;
-
-        for(i=0;i<count;i++){
-            require(_tos[i] != address(0) && !isContract(_tos[i]));//_tos must no contain any contract address
-
-            if(isContract(_tos[i])) {
-                ERC223ReceivingContract receiver = ERC223ReceivingContract(_tos[i]);
-                bytes memory _data = new bytes(1);
-                receiver.tokenFallback(msg.sender, _values[i], _data);
-            }
-
-            total_prev = total;
-            total = SafeMath.add(total, _values[i]);
-            require(total >= total_prev);
-        }
-
-        require(total <= balances[msg.sender]);
-
-        for(i=0;i<count;i++){
-            balances[msg.sender] = SafeMath.sub(balances[msg.sender], _values[i]);
-            balances[_tos[i]] = SafeMath.add(balances[_tos[i]], _values[i]);
-            Transfer(msg.sender, _tos[i], _values[i]);
-        }
-
-        return true;
-    }
 }
